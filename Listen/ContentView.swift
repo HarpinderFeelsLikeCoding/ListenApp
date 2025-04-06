@@ -8,10 +8,11 @@
 import SwiftUI
 import SwiftData
 import AVFoundation
+import Combine  // Add this line with other imports
 
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
-    @Query(sort: \AudioFile.lastPlayed, order: .reverse) private var audioFiles: [AudioFile]
+    @Query(sort: \AudioFile.dateAdded, order: .reverse) private var audioFiles: [AudioFile]
     
     @State private var audioPlayer: AVAudioPlayer?
     @State private var isPickerPresented = false
@@ -40,37 +41,8 @@ struct ContentView: View {
             }
             .navigationTitle("My MP3 Player")
             .toolbar {
-                // Edit button (shown when files exist)
                 if !audioFiles.isEmpty {
-                    ToolbarItem(placement: .navigationBarTrailing) {
-                        EditButton()
-                    }
-                }
-                
-                // Playback controls (shown when a track is playing)
-                if currentlyPlaying != nil {
-                    ToolbarItemGroup(placement: .bottomBar) {
-                        Button(action: previousTrack) {
-                            Image(systemName: "backward.fill")
-                                .font(.system(size: 20))
-                        }
-                        .disabled(currentlyPlaying == nil)
-                        
-                        Spacer()
-                        
-                        Button(action: togglePlayback) {
-                            Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                                .font(.system(size: 24))
-                        }
-                        
-                        Spacer()
-                        
-                        Button(action: nextTrack) {
-                            Image(systemName: "forward.fill")
-                                .font(.system(size: 20))
-                        }
-                        .disabled(currentlyPlaying == nil)
-                    }
+                    EditButton()
                 }
             }
             .alert("Delete Files", isPresented: $showDeleteAlert) {
@@ -81,8 +53,8 @@ struct ContentView: View {
             } message: {
                 Text("Are you sure you want to delete these files?")
             }
-            .alert("Playback Error", isPresented: $showErrorAlert) {
-                Button("OK") {}
+            .alert("Error", isPresented: $showErrorAlert) {
+                Button("OK", role: .cancel) {}
             } message: {
                 Text(errorMessage)
             }
@@ -145,7 +117,7 @@ struct ContentView: View {
                 .padding(.horizontal)
             
             HStack {
-                Button(action: togglePlayback) {
+                Button(action: { togglePlayback() }) {
                     Image(systemName: isPlaying ? "pause.fill" : "play.fill")
                         .font(.title)
                 }
@@ -164,85 +136,42 @@ struct ContentView: View {
         }
     }
     
-    private var playbackToolbar: some View {
-        Group {
-            Button(action: previousTrack) {
-                Image(systemName: "backward.fill")
-            }
-            
-            Button(action: togglePlayback) {
-                Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-            }
-            
-            Button(action: nextTrack) {
-                Image(systemName: "forward.fill")
-            }
-        }
-    }
-    
     // MARK: - Audio Functions
     
     private func playAudio(file: AudioFile) {
-        audioPlayer?.stop()
-        isPlaying = false
+        guard let url = file.fileURL else {
+            showError(message: "File location invalid")
+            return
+        }
         
-        guard let url = URL(string: file.fileURL) else {
-            errorMessage = "Invalid file URL"
-            showErrorAlert = true
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            showError(message: "File not found: \(url.lastPathComponent)")
             return
         }
         
         do {
             audioPlayer = try AVAudioPlayer(contentsOf: url)
-            audioPlayer?.delegate = makePlayerDelegate()
-            audioPlayer?.prepareToPlay()
             audioPlayer?.play()
-            isPlaying = true
-            
-            // Update progress timer
-            Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { timer in
-                guard let player = audioPlayer else {
-                    timer.invalidate()
-                    return
-                }
+            // ... rest of your playback logic ...
+        } catch {
+            showError(message: "Couldn't play \(url.lastPathComponent): \(error.localizedDescription)")
+        }
+    }
+    
+    private func setupPlaybackTimer() {
+        Timer.publish(every: 0.1, on: .main, in: .common)
+            .autoconnect()
+            .sink { [weak audioPlayer] _ in
+                guard let player = audioPlayer else { return }
                 playbackProgress = player.currentTime / player.duration
                 if !player.isPlaying {
-                    timer.invalidate()
                     isPlaying = false
                 }
             }
-            
-            withAnimation {
-                currentlyPlaying = file.id
-                file.lastPlayed = Date()
-                file.playCount += 1
-            }
-        } catch {
-            errorMessage = error.localizedDescription
-            showErrorAlert = true
-        }
-    }
-    
-    private func makePlayerDelegate() -> AVAudioPlayerDelegate {
-        class Delegate: NSObject, AVAudioPlayerDelegate {
-            var onFinish: (() -> Void)?
-            
-            func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-                onFinish?()
-            }
-        }
-        
-        let delegate = Delegate()
-        delegate.onFinish = {
-            self.isPlaying = false
-            self.playbackProgress = 1.0
-        }
-        return delegate
+            .store(in: &cancellables)
     }
     
     private func togglePlayback() {
-        guard audioPlayer != nil else { return }
-        
         if isPlaying {
             audioPlayer?.pause()
         } else {
@@ -251,37 +180,57 @@ struct ContentView: View {
         isPlaying.toggle()
     }
     
-    private func previousTrack() {
-        guard let currentId = currentlyPlaying,
-              let index = audioFiles.firstIndex(where: { $0.id == currentId }) else { return }
-        
-        let prevIndex = index > 0 ? index - 1 : audioFiles.count - 1
-        playAudio(file: audioFiles[prevIndex])
-    }
-    
-    private func nextTrack() {
-        guard let currentId = currentlyPlaying,
-              let index = audioFiles.firstIndex(where: { $0.id == currentId }) else { return }
-        
-        let nextIndex = index < audioFiles.count - 1 ? index + 1 : 0
-        playAudio(file: audioFiles[nextIndex])
-    }
-    
     // MARK: - File Management
     
     private func handleFileImport(result: Result<[URL], Error>) {
         switch result {
         case .success(let urls):
             for url in urls {
-                if !audioFiles.contains(where: { $0.fileURL == url.absoluteString }) {
-                    let newFile = AudioFile(fileURL: url)
-                    modelContext.insert(newFile)
+                // Start security-scoped access
+                guard url.startAccessingSecurityScopedResource() else {
+                    showError(message: "Couldn't access file: \(url.lastPathComponent)")
+                    continue
+                }
+                
+                defer { url.stopAccessingSecurityScopedResource() }
+                
+                do {
+                    // Copy to app's documents directory
+                    let newURL = try copyToDocumentsDirectory(sourceURL: url)
+                    
+                    // Create new AudioFile with the local URL
+                    let newFile = AudioFile(fileURL: newURL)
+                    
+                    // Check for duplicates by filename
+                    if !audioFiles.contains(where: { $0.fileName == newFile.fileName }) {
+                        modelContext.insert(newFile)
+                    }
+                } catch {
+                    showError(message: "Failed to import \(url.lastPathComponent): \(error.localizedDescription)")
                 }
             }
         case .failure(let error):
-            errorMessage = error.localizedDescription
-            showErrorAlert = true
+            showError(message: error.localizedDescription)
         }
+    }
+    
+    private func copyToDocumentsDirectory(sourceURL: URL) throws -> URL {
+        let documentsURL = FileManager.default.urls(
+            for: .documentDirectory,
+            in: .userDomainMask
+        ).first!
+        
+        let destinationURL = documentsURL.appendingPathComponent(sourceURL.lastPathComponent)
+        
+        // Delete if already exists
+        if FileManager.default.fileExists(atPath: destinationURL.path) {
+            try FileManager.default.removeItem(at: destinationURL)
+        }
+        
+        // Perform the copy
+        try FileManager.default.copyItem(at: sourceURL, to: destinationURL)
+        
+        return destinationURL
     }
     
     private func confirmDeleteFiles(_ offsets: IndexSet) {
@@ -294,12 +243,21 @@ struct ContentView: View {
         
         for index in indices {
             let file = audioFiles[index]
+            
+            // Delete physical file
+            if let url = file.fileURL {
+                try? FileManager.default.removeItem(at: url)
+            }
+            
+            // Delete from database
+            modelContext.delete(file)
+            
+            // Stop playback if deleting current file
             if currentlyPlaying == file.id {
                 audioPlayer?.stop()
                 currentlyPlaying = nil
                 isPlaying = false
             }
-            modelContext.delete(file)
         }
         
         filesToDelete = nil
@@ -307,11 +265,18 @@ struct ContentView: View {
     
     // MARK: - Helpers
     
+    private func showError(message: String) {
+        errorMessage = message
+        showErrorAlert = true
+    }
+    
     private func timeString(time: TimeInterval) -> String {
         let minute = Int(time) / 60
         let seconds = Int(time) % 60
         return String(format: "%02d:%02d", minute, seconds)
     }
+    
+    @State private var cancellables = Set<AnyCancellable>()
 }
 
 // MARK: - Subcomponents
