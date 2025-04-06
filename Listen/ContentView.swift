@@ -11,13 +11,17 @@ import AVFoundation
 
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
-    @Query private var audioFiles: [AudioFile]
+    @Query(sort: \AudioFile.lastPlayed, order: .reverse) private var audioFiles: [AudioFile]
     
     @State private var audioPlayer: AVAudioPlayer?
     @State private var isPickerPresented = false
     @State private var currentlyPlaying: UUID?
     @State private var showDeleteAlert = false
     @State private var filesToDelete: IndexSet?
+    @State private var playbackProgress: Double = 0
+    @State private var isPlaying = false
+    @State private var showErrorAlert = false
+    @State private var errorMessage = ""
     
     var body: some View {
         NavigationView {
@@ -29,11 +33,44 @@ struct ContentView: View {
                 }
                 
                 importButton
+                
+                if currentlyPlaying != nil {
+                    playbackControls
+                }
             }
             .navigationTitle("My MP3 Player")
             .toolbar {
+                // Edit button (shown when files exist)
                 if !audioFiles.isEmpty {
-                    EditButton()
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        EditButton()
+                    }
+                }
+                
+                // Playback controls (shown when a track is playing)
+                if currentlyPlaying != nil {
+                    ToolbarItemGroup(placement: .bottomBar) {
+                        Button(action: previousTrack) {
+                            Image(systemName: "backward.fill")
+                                .font(.system(size: 20))
+                        }
+                        .disabled(currentlyPlaying == nil)
+                        
+                        Spacer()
+                        
+                        Button(action: togglePlayback) {
+                            Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                                .font(.system(size: 24))
+                        }
+                        
+                        Spacer()
+                        
+                        Button(action: nextTrack) {
+                            Image(systemName: "forward.fill")
+                                .font(.system(size: 20))
+                        }
+                        .disabled(currentlyPlaying == nil)
+                    }
                 }
             }
             .alert("Delete Files", isPresented: $showDeleteAlert) {
@@ -44,8 +81,15 @@ struct ContentView: View {
             } message: {
                 Text("Are you sure you want to delete these files?")
             }
+            .alert("Playback Error", isPresented: $showErrorAlert) {
+                Button("OK") {}
+            } message: {
+                Text(errorMessage)
+            }
         }
     }
+    
+    // MARK: - Subviews
     
     private var emptyStateView: some View {
         VStack(spacing: 20) {
@@ -95,39 +139,148 @@ struct ContentView: View {
         }
     }
     
+    private var playbackControls: some View {
+        VStack {
+            ProgressView(value: playbackProgress, total: 1.0)
+                .padding(.horizontal)
+            
+            HStack {
+                Button(action: togglePlayback) {
+                    Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                        .font(.title)
+                }
+                
+                Spacer()
+                
+                Text(timeString(time: audioPlayer?.currentTime ?? 0))
+                    .font(.caption.monospacedDigit())
+                
+                Spacer()
+                
+                Text(timeString(time: audioPlayer?.duration ?? 0))
+                    .font(.caption.monospacedDigit())
+            }
+            .padding(.horizontal)
+        }
+    }
+    
+    private var playbackToolbar: some View {
+        Group {
+            Button(action: previousTrack) {
+                Image(systemName: "backward.fill")
+            }
+            
+            Button(action: togglePlayback) {
+                Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+            }
+            
+            Button(action: nextTrack) {
+                Image(systemName: "forward.fill")
+            }
+        }
+    }
+    
+    // MARK: - Audio Functions
+    
     private func playAudio(file: AudioFile) {
-        // Stop currently playing audio if any
         audioPlayer?.stop()
+        isPlaying = false
         
-        guard let url = URL(string: file.fileURL) else { return }
+        guard let url = URL(string: file.fileURL) else {
+            errorMessage = "Invalid file URL"
+            showErrorAlert = true
+            return
+        }
         
         do {
             audioPlayer = try AVAudioPlayer(contentsOf: url)
+            audioPlayer?.delegate = makePlayerDelegate()
+            audioPlayer?.prepareToPlay()
             audioPlayer?.play()
+            isPlaying = true
             
-            // Update playback stats
+            // Update progress timer
+            Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { timer in
+                guard let player = audioPlayer else {
+                    timer.invalidate()
+                    return
+                }
+                playbackProgress = player.currentTime / player.duration
+                if !player.isPlaying {
+                    timer.invalidate()
+                    isPlaying = false
+                }
+            }
+            
             withAnimation {
                 currentlyPlaying = file.id
                 file.lastPlayed = Date()
                 file.playCount += 1
             }
         } catch {
-            print("Playback error: \(error.localizedDescription)")
+            errorMessage = error.localizedDescription
+            showErrorAlert = true
         }
     }
+    
+    private func makePlayerDelegate() -> AVAudioPlayerDelegate {
+        class Delegate: NSObject, AVAudioPlayerDelegate {
+            var onFinish: (() -> Void)?
+            
+            func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+                onFinish?()
+            }
+        }
+        
+        let delegate = Delegate()
+        delegate.onFinish = {
+            self.isPlaying = false
+            self.playbackProgress = 1.0
+        }
+        return delegate
+    }
+    
+    private func togglePlayback() {
+        guard audioPlayer != nil else { return }
+        
+        if isPlaying {
+            audioPlayer?.pause()
+        } else {
+            audioPlayer?.play()
+        }
+        isPlaying.toggle()
+    }
+    
+    private func previousTrack() {
+        guard let currentId = currentlyPlaying,
+              let index = audioFiles.firstIndex(where: { $0.id == currentId }) else { return }
+        
+        let prevIndex = index > 0 ? index - 1 : audioFiles.count - 1
+        playAudio(file: audioFiles[prevIndex])
+    }
+    
+    private func nextTrack() {
+        guard let currentId = currentlyPlaying,
+              let index = audioFiles.firstIndex(where: { $0.id == currentId }) else { return }
+        
+        let nextIndex = index < audioFiles.count - 1 ? index + 1 : 0
+        playAudio(file: audioFiles[nextIndex])
+    }
+    
+    // MARK: - File Management
     
     private func handleFileImport(result: Result<[URL], Error>) {
         switch result {
         case .success(let urls):
             for url in urls {
-                // Check if file already exists
                 if !audioFiles.contains(where: { $0.fileURL == url.absoluteString }) {
                     let newFile = AudioFile(fileURL: url)
                     modelContext.insert(newFile)
                 }
             }
         case .failure(let error):
-            print("File import error: \(error.localizedDescription)")
+            errorMessage = error.localizedDescription
+            showErrorAlert = true
         }
     }
     
@@ -141,17 +294,27 @@ struct ContentView: View {
         
         for index in indices {
             let file = audioFiles[index]
-            // Stop playback if deleting currently playing file
             if currentlyPlaying == file.id {
                 audioPlayer?.stop()
                 currentlyPlaying = nil
+                isPlaying = false
             }
             modelContext.delete(file)
         }
         
         filesToDelete = nil
     }
+    
+    // MARK: - Helpers
+    
+    private func timeString(time: TimeInterval) -> String {
+        let minute = Int(time) / 60
+        let seconds = Int(time) % 60
+        return String(format: "%02d:%02d", minute, seconds)
+    }
 }
+
+// MARK: - Subcomponents
 
 struct AudioFileRow: View {
     let file: AudioFile
