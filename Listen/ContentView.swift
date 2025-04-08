@@ -122,44 +122,65 @@ struct ContentView: View {
                 .padding(.horizontal)
             
             HStack {
+                // 5-second back button
+                Button(action: skipBackward) {
+                    Image(systemName: "gobackward.5")
+                        .font(.title2)
+                }
+                
+                // Previous track button
                 Button(action: previousTrack) {
                     Image(systemName: "backward.fill")
                         .font(.title2)
                 }
-                .disabled(currentlyPlaying == nil)
                 
                 Spacer()
                 
+                // Play/pause button
                 Button(action: togglePlayback) {
                     Image(systemName: isPlaying ? "pause.circle.fill" : "play.circle.fill")
                         .font(.system(size: 40))
                 }
-                .disabled(currentlyPlaying == nil)
                 
                 Spacer()
                 
+                // Next track button
                 Button(action: nextTrack) {
                     Image(systemName: "forward.fill")
                         .font(.title2)
                 }
-                .disabled(currentlyPlaying == nil)
+                
+                // 5-second forward button
+                Button(action: skipForward) {
+                    Image(systemName: "goforward.5")
+                        .font(.title2)
+                }
             }
             .padding(.horizontal)
             
+            // Time indicators
             HStack {
                 Text(timeString(time: audioPlayer?.currentTime ?? 0))
-                    .font(.caption.monospacedDigit())
-                
                 Spacer()
-                
                 Text(timeString(time: audioPlayer?.duration ?? 0))
-                    .font(.caption.monospacedDigit())
             }
+            .font(.caption.monospacedDigit())
             .padding(.horizontal)
         }
     }
     
     // MARK: - Playback Functions
+    private func skipBackward() {
+        guard let player = audioPlayer else { return }
+        player.currentTime = max(0, player.currentTime - 5)
+        saveCurrentPlaybackPosition()
+    }
+
+    private func skipForward() {
+        guard let player = audioPlayer else { return }
+        player.currentTime = min(player.duration, player.currentTime + 5)
+        saveCurrentPlaybackPosition()
+    }
     
     private func handlePlayback(for file: AudioFile) {
         if currentlyPlaying == file.id {
