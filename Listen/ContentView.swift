@@ -8,10 +8,11 @@
 import SwiftUI
 import SwiftData
 import AVFoundation
-import Combine  // Add this line with other imports
+import Combine
 
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.scenePhase) private var scenePhase
     @Query(sort: \AudioFile.dateAdded, order: .reverse) private var audioFiles: [AudioFile]
     
     @State private var audioPlayer: AVAudioPlayer?
@@ -23,7 +24,8 @@ struct ContentView: View {
     @State private var isPlaying = false
     @State private var showErrorAlert = false
     @State private var errorMessage = ""
-    
+    @State private var cancellables = Set<AnyCancellable>()
+
     var body: some View {
         NavigationView {
             VStack {
@@ -58,6 +60,9 @@ struct ContentView: View {
             } message: {
                 Text(errorMessage)
             }
+            .onChange(of: scenePhase) { newPhase in
+                handleScenePhaseChange(newPhase)
+            }
         }
     }
     
@@ -84,7 +89,7 @@ struct ContentView: View {
                 AudioFileRow(
                     file: file,
                     isPlaying: currentlyPlaying == file.id,
-                    action: { playAudio(file: file) }
+                    action: { handlePlayback(for: file) }
                 )
             }
             .onDelete(perform: confirmDeleteFiles)
@@ -117,13 +122,31 @@ struct ContentView: View {
                 .padding(.horizontal)
             
             HStack {
-                Button(action: { togglePlayback() }) {
-                    Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                        .font(.title)
+                Button(action: previousTrack) {
+                    Image(systemName: "backward.fill")
+                        .font(.title2)
                 }
+                .disabled(currentlyPlaying == nil)
                 
                 Spacer()
                 
+                Button(action: togglePlayback) {
+                    Image(systemName: isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                        .font(.system(size: 40))
+                }
+                .disabled(currentlyPlaying == nil)
+                
+                Spacer()
+                
+                Button(action: nextTrack) {
+                    Image(systemName: "forward.fill")
+                        .font(.title2)
+                }
+                .disabled(currentlyPlaying == nil)
+            }
+            .padding(.horizontal)
+            
+            HStack {
                 Text(timeString(time: audioPlayer?.currentTime ?? 0))
                     .font(.caption.monospacedDigit())
                 
@@ -136,48 +159,171 @@ struct ContentView: View {
         }
     }
     
-    // MARK: - Audio Functions
+    // MARK: - Playback Functions
     
-    private func playAudio(file: AudioFile) {
-        guard let url = file.fileURL else {
-            showError(message: "File location invalid")
-            return
-        }
-        
-        guard FileManager.default.fileExists(atPath: url.path) else {
-            showError(message: "File not found: \(url.lastPathComponent)")
-            return
-        }
-        
-        do {
-            audioPlayer = try AVAudioPlayer(contentsOf: url)
-            audioPlayer?.play()
-            // ... rest of your playback logic ...
-        } catch {
-            showError(message: "Couldn't play \(url.lastPathComponent): \(error.localizedDescription)")
+    private func handlePlayback(for file: AudioFile) {
+        if currentlyPlaying == file.id {
+            togglePlayback()
+        } else {
+            playAudio(file: file)
         }
     }
     
+    private func playAudio(file: AudioFile) {
+        do {
+            audioPlayer?.stop()
+            
+            guard let url = file.fileURL else {
+                throw NSError(domain: "AudioError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid file URL"])
+            }
+            
+            guard FileManager.default.fileExists(atPath: url.path) else {
+                throw NSError(domain: "AudioError", code: -2, userInfo: [NSLocalizedDescriptionKey: "File not found"])
+            }
+            
+            audioPlayer = try AVAudioPlayer(contentsOf: url)
+            audioPlayer?.delegate = makePlayerDelegate()
+            audioPlayer?.currentTime = file.lastPlaybackPosition
+            audioPlayer?.prepareToPlay()
+            
+            if isPlaying {
+                audioPlayer?.play()
+            }
+            
+            withAnimation {
+                currentlyPlaying = file.id
+                file.lastPlayed = Date()
+                if !isPlaying {
+                    isPlaying = true
+                    audioPlayer?.play()
+                }
+            }
+            
+            setupPlaybackTimer()
+        } catch {
+            showError(message: error.localizedDescription)
+        }
+    }
+    
+    private func togglePlayback() {
+        guard audioPlayer != nil else { return }
+        
+        if isPlaying {
+            audioPlayer?.pause()
+            saveCurrentPlaybackPosition()
+        } else {
+            audioPlayer?.play()
+        }
+        isPlaying.toggle()
+    }
+    
+    private func previousTrack() {
+        guard let currentId = currentlyPlaying,
+              let currentIndex = audioFiles.firstIndex(where: { $0.id == currentId }) else { return }
+        
+        let previousIndex = currentIndex > 0 ? currentIndex - 1 : audioFiles.count - 1
+        playAudio(file: audioFiles[previousIndex])
+    }
+    
+    private func nextTrack() {
+        guard let currentId = currentlyPlaying,
+              let currentIndex = audioFiles.firstIndex(where: { $0.id == currentId }) else { return }
+        
+        let nextIndex = currentIndex < audioFiles.count - 1 ? currentIndex + 1 : 0
+        playAudio(file: audioFiles[nextIndex])
+    }
+    
     private func setupPlaybackTimer() {
+        cancellables.removeAll()
+        
         Timer.publish(every: 0.1, on: .main, in: .common)
             .autoconnect()
-            .sink { [weak audioPlayer] _ in
-                guard let player = audioPlayer else { return }
-                playbackProgress = player.currentTime / player.duration
-                if !player.isPlaying {
-                    isPlaying = false
+            .sink { _ in
+                guard let player = self.audioPlayer else { return }
+                
+                self.playbackProgress = player.currentTime / player.duration
+                
+                if !player.isPlaying && self.isPlaying {
+                    self.isPlaying = false
+                }
+                
+                // Auto-save position periodically
+                if Int(player.currentTime) % 5 == 0 {
+                    self.saveCurrentPlaybackPosition()
                 }
             }
             .store(in: &cancellables)
     }
     
-    private func togglePlayback() {
-        if isPlaying {
-            audioPlayer?.pause()
-        } else {
-            audioPlayer?.play()
+    private func makePlayerDelegate() -> AVAudioPlayerDelegate {
+        class Delegate: NSObject, AVAudioPlayerDelegate {
+            var onFinish: (() -> Void)?
+            
+            func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+                onFinish?()
+            }
         }
-        isPlaying.toggle()
+        
+        let delegate = Delegate()
+        delegate.onFinish = { [currentlyPlaying] in
+            // Update state directly without capturing self
+            DispatchQueue.main.async {
+                self.isPlaying = false
+                self.playbackProgress = 1.0
+                self.saveCurrentPlaybackPosition()
+                
+                // Auto-play next track if available
+                if let currentId = currentlyPlaying,
+                   let currentIndex = self.audioFiles.firstIndex(where: { $0.id == currentId }) {
+                    let nextIndex = currentIndex < self.audioFiles.count - 1 ? currentIndex + 1 : 0
+                    self.playAudio(file: self.audioFiles[nextIndex])
+                }
+            }
+        }
+        return delegate
+    }
+    
+    // MARK: - State Persistence
+    
+    private func handleScenePhaseChange(_ newPhase: ScenePhase) {
+        switch newPhase {
+        case .inactive, .background:
+            saveCurrentPlaybackPosition()
+            audioPlayer?.pause()
+        case .active:
+            restorePlaybackState()
+        @unknown default:
+            break
+        }
+    }
+    
+    private func saveCurrentPlaybackPosition() {
+        guard let player = audioPlayer,
+              let currentId = currentlyPlaying,
+              let file = audioFiles.first(where: { $0.id == currentId }) else { return }
+        
+        file.lastPlaybackPosition = player.currentTime
+        try? modelContext.save()
+    }
+    
+    private func restorePlaybackState() {
+        guard let currentId = currentlyPlaying,
+              let file = audioFiles.first(where: { $0.id == currentId }),
+              let url = file.fileURL else { return }
+        
+        do {
+            audioPlayer = try AVAudioPlayer(contentsOf: url)
+            audioPlayer?.delegate = makePlayerDelegate()
+            audioPlayer?.currentTime = file.lastPlaybackPosition
+            audioPlayer?.prepareToPlay()
+            
+            if isPlaying {
+                audioPlayer?.play()
+                setupPlaybackTimer()
+            }
+        } catch {
+            showError(message: "Failed to restore playback: \(error.localizedDescription)")
+        }
     }
     
     // MARK: - File Management
@@ -186,7 +332,6 @@ struct ContentView: View {
         switch result {
         case .success(let urls):
             for url in urls {
-                // Start security-scoped access
                 guard url.startAccessingSecurityScopedResource() else {
                     showError(message: "Couldn't access file: \(url.lastPathComponent)")
                     continue
@@ -195,14 +340,10 @@ struct ContentView: View {
                 defer { url.stopAccessingSecurityScopedResource() }
                 
                 do {
-                    // Copy to app's documents directory
                     let newURL = try copyToDocumentsDirectory(sourceURL: url)
                     
-                    // Create new AudioFile with the local URL
-                    let newFile = AudioFile(fileURL: newURL)
-                    
-                    // Check for duplicates by filename
-                    if !audioFiles.contains(where: { $0.fileName == newFile.fileName }) {
+                    if !audioFiles.contains(where: { $0.fileName == newURL.lastPathComponent }) {
+                        let newFile = AudioFile(fileURL: newURL)
                         modelContext.insert(newFile)
                     }
                 } catch {
@@ -222,14 +363,11 @@ struct ContentView: View {
         
         let destinationURL = documentsURL.appendingPathComponent(sourceURL.lastPathComponent)
         
-        // Delete if already exists
         if FileManager.default.fileExists(atPath: destinationURL.path) {
             try FileManager.default.removeItem(at: destinationURL)
         }
         
-        // Perform the copy
         try FileManager.default.copyItem(at: sourceURL, to: destinationURL)
-        
         return destinationURL
     }
     
@@ -244,15 +382,12 @@ struct ContentView: View {
         for index in indices {
             let file = audioFiles[index]
             
-            // Delete physical file
             if let url = file.fileURL {
                 try? FileManager.default.removeItem(at: url)
             }
             
-            // Delete from database
             modelContext.delete(file)
             
-            // Stop playback if deleting current file
             if currentlyPlaying == file.id {
                 audioPlayer?.stop()
                 currentlyPlaying = nil
@@ -275,8 +410,6 @@ struct ContentView: View {
         let seconds = Int(time) % 60
         return String(format: "%02d:%02d", minute, seconds)
     }
-    
-    @State private var cancellables = Set<AnyCancellable>()
 }
 
 // MARK: - Subcomponents
