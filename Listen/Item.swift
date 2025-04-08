@@ -12,20 +12,21 @@ import SwiftData
 final class AudioFile {
     var id: UUID
     var fileName: String
-    var storedPath: String  // Changed from fileURL to storedPath
+    var storedPath: String
     var dateAdded: Date
     var lastPlayed: Date?
     var playCount: Int
+    var lastPlaybackPosition: Double // NEW: Store playback position
     
     init(fileURL: URL) {
         self.id = UUID()
         self.fileName = fileURL.lastPathComponent
-        self.storedPath = fileURL.lastPathComponent  // Just store filename
+        self.storedPath = fileURL.lastPathComponent
         self.dateAdded = Date()
         self.playCount = 0
+        self.lastPlaybackPosition = 0 // Initialize
     }
     
-    // Computed property to get full URL
     var fileURL: URL? {
         let documentsURL = FileManager.default.urls(
             for: .documentDirectory,
