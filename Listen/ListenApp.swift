@@ -6,11 +6,21 @@
 //
 import SwiftUI
 import SwiftData
+import AVFAudio
 
 @main
 struct ListenApp: App {
     @State private var modelError: ModelError?
     @State private var showErrorAlert = false
+    
+    init() {
+            do {
+                try AVAudioSession.sharedInstance().setCategory(.playback)
+                try AVAudioSession.sharedInstance().setActive(true)
+            } catch {
+                print("Audio session setup error: \(error)")
+            }
+        }
     
     var modelContainer: ModelContainer {
         do {

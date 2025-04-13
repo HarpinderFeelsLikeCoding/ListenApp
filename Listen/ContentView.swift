@@ -172,14 +172,18 @@ struct ContentView: View {
     // MARK: - Playback Functions
     private func skipBackward() {
         guard let player = audioPlayer else { return }
-        player.currentTime = max(0, player.currentTime - 5)
+        let newTime = max(0, player.currentTime - 5)
+        player.currentTime = newTime
         saveCurrentPlaybackPosition()
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
 
     private func skipForward() {
         guard let player = audioPlayer else { return }
-        player.currentTime = min(player.duration, player.currentTime + 5)
+        let newTime = min(player.duration, player.currentTime + 5)
+        player.currentTime = newTime
         saveCurrentPlaybackPosition()
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
     
     private func handlePlayback(for file: AudioFile) {
@@ -243,14 +247,16 @@ struct ContentView: View {
               let currentIndex = audioFiles.firstIndex(where: { $0.id == currentId }) else { return }
         
         let previousIndex = currentIndex > 0 ? currentIndex - 1 : audioFiles.count - 1
+        currentlyPlaying = audioFiles[previousIndex].id
         playAudio(file: audioFiles[previousIndex])
     }
-    
+
     private func nextTrack() {
         guard let currentId = currentlyPlaying,
               let currentIndex = audioFiles.firstIndex(where: { $0.id == currentId }) else { return }
         
         let nextIndex = currentIndex < audioFiles.count - 1 ? currentIndex + 1 : 0
+        currentlyPlaying = audioFiles[nextIndex].id
         playAudio(file: audioFiles[nextIndex])
     }
     
@@ -330,7 +336,12 @@ struct ContentView: View {
     private func restorePlaybackState() {
         guard let currentId = currentlyPlaying,
               let file = audioFiles.first(where: { $0.id == currentId }),
-              let url = file.fileURL else { return }
+              let url = file.fileURL,
+              FileManager.default.fileExists(atPath: url.path) else {
+            currentlyPlaying = nil
+            isPlaying = false
+            return
+        }
         
         do {
             audioPlayer = try AVAudioPlayer(contentsOf: url)
@@ -344,6 +355,8 @@ struct ContentView: View {
             }
         } catch {
             showError(message: "Failed to restore playback: \(error.localizedDescription)")
+            currentlyPlaying = nil
+            isPlaying = false
         }
     }
     
@@ -353,6 +366,7 @@ struct ContentView: View {
         switch result {
         case .success(let urls):
             for url in urls {
+                // Start security-scoped access
                 guard url.startAccessingSecurityScopedResource() else {
                     showError(message: "Couldn't access file: \(url.lastPathComponent)")
                     continue
@@ -361,19 +375,68 @@ struct ContentView: View {
                 defer { url.stopAccessingSecurityScopedResource() }
                 
                 do {
+                    // 1. Copy to app's documents directory
                     let newURL = try copyToDocumentsDirectory(sourceURL: url)
                     
+                    // 2. Verify the file was actually copied
+                    if !FileManager.default.fileExists(atPath: newURL.path) {
+                        showError(message: "File copy verification failed for: \(url.lastPathComponent)")
+                        continue
+                    }
+                    
+                    // 3. Check for duplicates by filename
                     if !audioFiles.contains(where: { $0.fileName == newURL.lastPathComponent }) {
                         let newFile = AudioFile(fileURL: newURL)
                         modelContext.insert(newFile)
+                        
+                        // 4. Print debug info
+                        print("""
+                        Successfully imported file:
+                        - Original: \(url.lastPathComponent)
+                        - Stored at: \(newURL.path)
+                        - File size: \((try? FileManager.default.attributesOfItem(atPath: newURL.path)[.size] as? Int64).map { "\($0) bytes" } ?? "unknown size")
+                        """)
                     }
                 } catch {
                     showError(message: "Failed to import \(url.lastPathComponent): \(error.localizedDescription)")
                 }
             }
+            
+            // 5. Print all stored files after import
+            debugFileStorage()
+            
         case .failure(let error):
             showError(message: error.localizedDescription)
         }
+    }
+
+    // Add this helper function
+    private func debugFileStorage() {
+        let documentsURL = FileManager.default.urls(
+            for: .documentDirectory,
+            in: .userDomainMask
+        ).first!
+        
+        print("\n=== Current Files in Documents Directory ===")
+        
+        do {
+            let files = try FileManager.default.contentsOfDirectory(atPath: documentsURL.path)
+            
+            if files.isEmpty {
+                print("No files found in documents directory")
+            } else {
+                for file in files {
+                    let fileURL = documentsURL.appendingPathComponent(file)
+                    let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
+                    let size = attributes[.size] as? Int64 ?? 0
+                    print("- \(file) (\(size) bytes)")
+                }
+            }
+        } catch {
+            print("Error listing files: \(error.localizedDescription)")
+        }
+        
+        print("=========================================\n")
     }
     
     private func copyToDocumentsDirectory(sourceURL: URL) throws -> URL {

@@ -12,11 +12,11 @@ import SwiftData
 final class AudioFile {
     var id: UUID
     var fileName: String
-    var storedPath: String
+    var storedPath: String  // Just the filename
     var dateAdded: Date
     var lastPlayed: Date?
     var playCount: Int
-    var lastPlaybackPosition: Double // NEW: Store playback position
+    var lastPlaybackPosition: Double  // Crucial for resume
     
     init(fileURL: URL) {
         self.id = UUID()
@@ -24,7 +24,7 @@ final class AudioFile {
         self.storedPath = fileURL.lastPathComponent
         self.dateAdded = Date()
         self.playCount = 0
-        self.lastPlaybackPosition = 0 // Initialize
+        self.lastPlaybackPosition = 0
     }
     
     var fileURL: URL? {
