@@ -10,21 +10,20 @@ import SwiftData
 
 @Model
 final class AudioFile {
-    var id: UUID
+    @Attribute(.unique) var id: UUID
     var fileName: String
-    var storedPath: String  // Just the filename
+    var storedFileName: String
     var dateAdded: Date
     var lastPlayed: Date?
-    var playCount: Int
-    var lastPlaybackPosition: Double  // Crucial for resume
+    
+    var playCount: Int = 0
+    var lastPlaybackPosition: Double = 0.0
     
     init(fileURL: URL) {
         self.id = UUID()
         self.fileName = fileURL.lastPathComponent
-        self.storedPath = fileURL.lastPathComponent
+        self.storedFileName = fileURL.lastPathComponent
         self.dateAdded = Date()
-        self.playCount = 0
-        self.lastPlaybackPosition = 0
     }
     
     var fileURL: URL? {
@@ -32,6 +31,6 @@ final class AudioFile {
             for: .documentDirectory,
             in: .userDomainMask
         ).first
-        return documentsURL?.appendingPathComponent(storedPath)
+        return documentsURL?.appendingPathComponent(storedFileName)
     }
 }

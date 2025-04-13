@@ -4,6 +4,7 @@
 //
 //  Created by Harpinder Singh on 4/5/25.
 //
+
 import SwiftUI
 import SwiftData
 import AVFAudio
@@ -12,44 +13,24 @@ import AVFAudio
 struct ListenApp: App {
     @State private var modelError: ModelError?
     @State private var showErrorAlert = false
+    let container: ModelContainer
     
     init() {
-            do {
-                try AVAudioSession.sharedInstance().setCategory(.playback)
-                try AVAudioSession.sharedInstance().setActive(true)
-            } catch {
-                print("Audio session setup error: \(error)")
-            }
-        }
-    
-    var modelContainer: ModelContainer {
+        // Configure audio session
         do {
-            let schema = Schema([
-                AudioFile.self
-            ])
-            
-            let config = ModelConfiguration(
-                schema: schema,
-                isStoredInMemoryOnly: false,
-                allowsSave: true
-            )
-            
-            return try ModelContainer(for: schema, configurations: [config])
+            try AVAudioSession.sharedInstance().setCategory(.playback)
+            try AVAudioSession.sharedInstance().setActive(true)
         } catch {
-            // Fallback to in-memory container if persistent storage fails
+            print("Audio session configuration error: \(error)")
+        }
+        
+        // Configure SwiftData container
+        do {
+            container = try ModelContainer(for: AudioFile.self)
+        } catch {
             modelError = ModelError(error: error)
             showErrorAlert = true
-            
-            do {
-                let inMemoryConfig = ModelConfiguration(
-                    schema: Schema([AudioFile.self]),
-                    isStoredInMemoryOnly: true
-                )
-                return try ModelContainer(for: AudioFile.self, configurations: inMemoryConfig)
-            } catch {
-                // Only fatal error if even in-memory fails
-                fatalError("Failed to create model container: \(error.localizedDescription)")
-            }
+            container = try! ModelContainer(for: AudioFile.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
         }
     }
     
@@ -62,7 +43,7 @@ struct ListenApp: App {
                     Text(modelError?.localizedDescription ?? "An unknown error occurred")
                 }
         }
-        .modelContainer(modelContainer)
+        .modelContainer(container)
     }
 }
 
@@ -70,15 +51,10 @@ struct ModelError: LocalizedError {
     let error: Error
     
     var errorDescription: String? {
-        """
-        Could not load persistent storage.
-        Using temporary in-memory storage.
-        
-        Error: \(error.localizedDescription)
-        """
+        "Database Error: \(error.localizedDescription)"
     }
     
     var recoverySuggestion: String? {
-        "Restart the app to try again. Some data may not be saved between sessions."
+        "Using temporary storage. Some data may not persist between sessions."
     }
 }

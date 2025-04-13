@@ -25,7 +25,7 @@ struct ContentView: View {
     @State private var showErrorAlert = false
     @State private var errorMessage = ""
     @State private var cancellables = Set<AnyCancellable>()
-
+    
     var body: some View {
         NavigationView {
             VStack {
@@ -67,7 +67,6 @@ struct ContentView: View {
     }
     
     // MARK: - Subviews
-    
     private var emptyStateView: some View {
         VStack(spacing: 20) {
             Image(systemName: "music.note.list")
@@ -122,13 +121,11 @@ struct ContentView: View {
                 .padding(.horizontal)
             
             HStack {
-                // 5-second back button
                 Button(action: skipBackward) {
                     Image(systemName: "gobackward.5")
                         .font(.title2)
                 }
                 
-                // Previous track button
                 Button(action: previousTrack) {
                     Image(systemName: "backward.fill")
                         .font(.title2)
@@ -136,7 +133,6 @@ struct ContentView: View {
                 
                 Spacer()
                 
-                // Play/pause button
                 Button(action: togglePlayback) {
                     Image(systemName: isPlaying ? "pause.circle.fill" : "play.circle.fill")
                         .font(.system(size: 40))
@@ -144,13 +140,11 @@ struct ContentView: View {
                 
                 Spacer()
                 
-                // Next track button
                 Button(action: nextTrack) {
                     Image(systemName: "forward.fill")
                         .font(.title2)
                 }
                 
-                // 5-second forward button
                 Button(action: skipForward) {
                     Image(systemName: "goforward.5")
                         .font(.title2)
@@ -158,7 +152,6 @@ struct ContentView: View {
             }
             .padding(.horizontal)
             
-            // Time indicators
             HStack {
                 Text(timeString(time: audioPlayer?.currentTime ?? 0))
                 Spacer()
@@ -168,7 +161,6 @@ struct ContentView: View {
             .padding(.horizontal)
         }
     }
-    
     // MARK: - Playback Functions
     private func skipBackward() {
         guard let player = audioPlayer else { return }
@@ -177,7 +169,7 @@ struct ContentView: View {
         saveCurrentPlaybackPosition()
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
-
+    
     private func skipForward() {
         guard let player = audioPlayer else { return }
         let newTime = min(player.duration, player.currentTime + 5)
@@ -247,16 +239,14 @@ struct ContentView: View {
               let currentIndex = audioFiles.firstIndex(where: { $0.id == currentId }) else { return }
         
         let previousIndex = currentIndex > 0 ? currentIndex - 1 : audioFiles.count - 1
-        currentlyPlaying = audioFiles[previousIndex].id
         playAudio(file: audioFiles[previousIndex])
     }
-
+    
     private func nextTrack() {
         guard let currentId = currentlyPlaying,
               let currentIndex = audioFiles.firstIndex(where: { $0.id == currentId }) else { return }
         
         let nextIndex = currentIndex < audioFiles.count - 1 ? currentIndex + 1 : 0
-        currentlyPlaying = audioFiles[nextIndex].id
         playAudio(file: audioFiles[nextIndex])
     }
     
@@ -274,7 +264,6 @@ struct ContentView: View {
                     self.isPlaying = false
                 }
                 
-                // Auto-save position periodically
                 if Int(player.currentTime) % 5 == 0 {
                     self.saveCurrentPlaybackPosition()
                 }
@@ -293,13 +282,11 @@ struct ContentView: View {
         
         let delegate = Delegate()
         delegate.onFinish = { [currentlyPlaying] in
-            // Update state directly without capturing self
             DispatchQueue.main.async {
                 self.isPlaying = false
                 self.playbackProgress = 1.0
                 self.saveCurrentPlaybackPosition()
                 
-                // Auto-play next track if available
                 if let currentId = currentlyPlaying,
                    let currentIndex = self.audioFiles.firstIndex(where: { $0.id == currentId }) {
                     let nextIndex = currentIndex < self.audioFiles.count - 1 ? currentIndex + 1 : 0
@@ -311,7 +298,6 @@ struct ContentView: View {
     }
     
     // MARK: - State Persistence
-    
     private func handleScenePhaseChange(_ newPhase: ScenePhase) {
         switch newPhase {
         case .inactive, .background:
@@ -361,12 +347,10 @@ struct ContentView: View {
     }
     
     // MARK: - File Management
-    
     private func handleFileImport(result: Result<[URL], Error>) {
         switch result {
         case .success(let urls):
             for url in urls {
-                // Start security-scoped access
                 guard url.startAccessingSecurityScopedResource() else {
                     showError(message: "Couldn't access file: \(url.lastPathComponent)")
                     continue
@@ -375,84 +359,36 @@ struct ContentView: View {
                 defer { url.stopAccessingSecurityScopedResource() }
                 
                 do {
-                    // 1. Copy to app's documents directory
-                    let newURL = try copyToDocumentsDirectory(sourceURL: url)
+                    let documentsURL = FileManager.default.urls(
+                        for: .documentDirectory,
+                        in: .userDomainMask
+                    ).first!
                     
-                    // 2. Verify the file was actually copied
-                    if !FileManager.default.fileExists(atPath: newURL.path) {
-                        showError(message: "File copy verification failed for: \(url.lastPathComponent)")
+                    let destinationURL = documentsURL.appendingPathComponent(url.lastPathComponent)
+                    
+                    if FileManager.default.fileExists(atPath: destinationURL.path) {
+                        try FileManager.default.removeItem(at: destinationURL)
+                    }
+                    
+                    try FileManager.default.copyItem(at: url, to: destinationURL)
+                    
+                    guard FileManager.default.fileExists(atPath: destinationURL.path) else {
+                        showError(message: "Copy verification failed for: \(url.lastPathComponent)")
                         continue
                     }
                     
-                    // 3. Check for duplicates by filename
-                    if !audioFiles.contains(where: { $0.fileName == newURL.lastPathComponent }) {
-                        let newFile = AudioFile(fileURL: newURL)
+                    if !audioFiles.contains(where: { $0.fileName == url.lastPathComponent }) {
+                        let newFile = AudioFile(fileURL: destinationURL)
                         modelContext.insert(newFile)
-                        
-                        // 4. Print debug info
-                        print("""
-                        Successfully imported file:
-                        - Original: \(url.lastPathComponent)
-                        - Stored at: \(newURL.path)
-                        - File size: \((try? FileManager.default.attributesOfItem(atPath: newURL.path)[.size] as? Int64).map { "\($0) bytes" } ?? "unknown size")
-                        """)
+                        try modelContext.save()
                     }
                 } catch {
                     showError(message: "Failed to import \(url.lastPathComponent): \(error.localizedDescription)")
                 }
             }
-            
-            // 5. Print all stored files after import
-            debugFileStorage()
-            
         case .failure(let error):
             showError(message: error.localizedDescription)
         }
-    }
-
-    // Add this helper function
-    private func debugFileStorage() {
-        let documentsURL = FileManager.default.urls(
-            for: .documentDirectory,
-            in: .userDomainMask
-        ).first!
-        
-        print("\n=== Current Files in Documents Directory ===")
-        
-        do {
-            let files = try FileManager.default.contentsOfDirectory(atPath: documentsURL.path)
-            
-            if files.isEmpty {
-                print("No files found in documents directory")
-            } else {
-                for file in files {
-                    let fileURL = documentsURL.appendingPathComponent(file)
-                    let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
-                    let size = attributes[.size] as? Int64 ?? 0
-                    print("- \(file) (\(size) bytes)")
-                }
-            }
-        } catch {
-            print("Error listing files: \(error.localizedDescription)")
-        }
-        
-        print("=========================================\n")
-    }
-    
-    private func copyToDocumentsDirectory(sourceURL: URL) throws -> URL {
-        let documentsURL = FileManager.default.urls(
-            for: .documentDirectory,
-            in: .userDomainMask
-        ).first!
-        
-        let destinationURL = documentsURL.appendingPathComponent(sourceURL.lastPathComponent)
-        
-        if FileManager.default.fileExists(atPath: destinationURL.path) {
-            try FileManager.default.removeItem(at: destinationURL)
-        }
-        
-        try FileManager.default.copyItem(at: sourceURL, to: destinationURL)
-        return destinationURL
     }
     
     private func confirmDeleteFiles(_ offsets: IndexSet) {
@@ -483,7 +419,6 @@ struct ContentView: View {
     }
     
     // MARK: - Helpers
-    
     private func showError(message: String) {
         errorMessage = message
         showErrorAlert = true
@@ -494,67 +429,66 @@ struct ContentView: View {
         let seconds = Int(time) % 60
         return String(format: "%02d:%02d", minute, seconds)
     }
-}
-
-// MARK: - Subcomponents
-
-struct AudioFileRow: View {
-    let file: AudioFile
-    let isPlaying: Bool
-    let action: () -> Void
     
-    var body: some View {
-        Button(action: action) {
-            HStack {
-                Image(systemName: isPlaying ? "play.fill" : "music.note")
-                    .foregroundColor(isPlaying ? .blue : .primary)
-                
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(file.fileName)
-                        .font(.headline)
-                        .lineLimit(1)
+    // MARK: - Subcomponents
+    struct AudioFileRow: View {
+        let file: AudioFile
+        let isPlaying: Bool
+        let action: () -> Void
+        
+        var body: some View {
+            Button(action: action) {
+                HStack {
+                    Image(systemName: isPlaying ? "play.fill" : "music.note")
+                        .foregroundColor(isPlaying ? .blue : .primary)
                     
-                    HStack {
-                        if let lastPlayed = file.lastPlayed {
-                            Text("Last played: \(lastPlayed.formatted(date: .abbreviated, time: .shortened))")
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(file.fileName)
+                            .font(.headline)
+                            .lineLimit(1)
+                        
+                        HStack {
+                            if let lastPlayed = file.lastPlayed {
+                                Text("Last played: \(lastPlayed.formatted(date: .abbreviated, time: .shortened))")
+                                    .font(.caption2)
+                            }
+                            
+                            Spacer()
+                            
+                            Text("\(file.playCount) plays")
                                 .font(.caption2)
                         }
-                        
-                        Spacer()
-                        
-                        Text("\(file.playCount) plays")
-                            .font(.caption2)
+                        .foregroundColor(.secondary)
                     }
-                    .foregroundColor(.secondary)
+                    
+                    Spacer()
+                    
+                    if isPlaying {
+                        PlayingIndicator()
+                    }
                 }
-                
-                Spacer()
-                
-                if isPlaying {
-                    PlayingIndicator()
-                }
+                .padding(.vertical, 8)
+                .contentShape(Rectangle())
             }
-            .padding(.vertical, 8)
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
         }
-        .buttonStyle(.plain)
     }
-}
-
-struct PlayingIndicator: View {
-    @State private var isAnimating = false
     
-    var body: some View {
-        HStack(spacing: 3) {
-            ForEach([0.2, 0.4, 0.6], id: \.self) { height in
-                RoundedRectangle(cornerRadius: 2)
-                    .frame(width: 3, height: isAnimating ? 15 * height : 5)
-                    .animation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true), value: isAnimating)
-                    .foregroundColor(.blue)
+    struct PlayingIndicator: View {
+        @State private var isAnimating = false
+        
+        var body: some View {
+            HStack(spacing: 3) {
+                ForEach([0.2, 0.4, 0.6], id: \.self) { height in
+                    RoundedRectangle(cornerRadius: 2)
+                        .frame(width: 3, height: isAnimating ? 15 * height : 5)
+                        .animation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true), value: isAnimating)
+                        .foregroundColor(.blue)
+                }
             }
+            .frame(width: 15, height: 15)
+            .onAppear { isAnimating = true }
         }
-        .frame(width: 15, height: 15)
-        .onAppear { isAnimating = true }
     }
 }
 
