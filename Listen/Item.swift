@@ -33,4 +33,45 @@ final class AudioFile {
         ).first
         return documentsURL?.appendingPathComponent(storedFileName)
     }
+    
+    func rename(to newName: String) throws {
+           guard let originalURL = self.fileURL else { throw RenameError.fileNotFound }
+           guard !newName.isEmpty else { throw RenameError.invalidName }
+           guard newName != fileName else { return } // No change needed
+           
+           let fileExtension = (fileName as NSString).pathExtension
+           let newFileName = (newName as NSString).deletingPathExtension + "." + fileExtension
+           
+           let documentsURL = FileManager.default.urls(
+               for: .documentDirectory,
+               in: .userDomainMask
+           ).first!
+           
+           let newURL = documentsURL.appendingPathComponent(newFileName)
+           
+           // Check if new name already exists
+           if FileManager.default.fileExists(atPath: newURL.path) {
+               throw RenameError.nameExists
+           }
+           
+           // Perform the actual file system rename
+           try FileManager.default.moveItem(at: originalURL, to: newURL)
+           
+           // Update model properties
+           self.fileName = newFileName
+       }
+    
+    enum RenameError: Error, LocalizedError {
+        case fileNotFound
+        case invalidName
+        case nameExists
+        
+        var errorDescription: String? {
+            switch self {
+            case .fileNotFound: return "Original file not found"
+            case .invalidName: return "Please enter a valid name"
+            case .nameExists: return "A file with this name already exists"
+            }
+        }
+    }
 }
