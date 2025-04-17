@@ -5,6 +5,8 @@
 //  Created by Harpinder Singh on 4/14/25.
 //
 
+import SwiftUI
+
 struct RenameView: View {
     @Environment(\.dismiss) var dismiss
     @ObservedObject var file: AudioFile
@@ -16,24 +18,30 @@ struct RenameView: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("File name", text: $newName)
-                        .autocorrectionDisabled()
-                        .onAppear {
-                            newName = (file.fileName as NSString).deletingPathExtension
+                    HStack {
+                        TextField("File name", text: $newName)
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.words)
+                        
+                        if !file.fileExtension.isEmpty {
+                            Text(".\(file.fileExtension)")
+                                .foregroundColor(.secondary)
                         }
+                    }
+                } header: {
+                    Text("New Name")
+                } footer: {
+                    if !errorMessage.isEmpty {
+                        Text(errorMessage)
+                            .foregroundColor(.red)
+                    }
                 }
                 
                 Section {
                     Button("Rename") {
-                        do {
-                            try file.rename(to: newName)
-                            dismiss()
-                        } catch {
-                            errorMessage = error.localizedDescription
-                            showError = true
-                        }
+                        renameFile()
                     }
-                    .disabled(newName.isEmpty || newName == (file.fileName as NSString).deletingPathExtension)
+                    .disabled(!isNameValid)
                 }
             }
             .navigationTitle("Rename File")
@@ -45,11 +53,34 @@ struct RenameView: View {
                     }
                 }
             }
+            .onAppear {
+                newName = file.displayName
+            }
             .alert("Rename Error", isPresented: $showError) {
                 Button("OK") { }
             } message: {
                 Text(errorMessage)
             }
+        }
+    }
+    
+    private var isNameValid: Bool {
+        !newName.isEmpty &&
+        !newName.contains("/") &&
+        !newName.contains(":") &&
+        newName != file.displayName
+    }
+    
+    private func renameFile() {
+        do {
+            try file.rename(to: newName)
+            dismiss()
+        } catch let error as AudioFile.RenameError {
+            errorMessage = error.localizedDescription
+            showError = true
+        } catch {
+            errorMessage = "An unexpected error occurred"
+            showError = true
         }
     }
 }

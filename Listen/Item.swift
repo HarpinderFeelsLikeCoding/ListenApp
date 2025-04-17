@@ -4,18 +4,16 @@
 //
 //  Created by Harpinder Singh on 4/5/25.
 //
-
 import Foundation
 import SwiftData
 
 @Model
-final class AudioFile {
+final class AudioFile: Equatable {
     @Attribute(.unique) var id: UUID
     var fileName: String
     var storedFileName: String
     var dateAdded: Date
     var lastPlayed: Date?
-    
     var playCount: Int = 0
     var lastPlaybackPosition: Double = 0.0
     
@@ -26,40 +24,54 @@ final class AudioFile {
         self.dateAdded = Date()
     }
     
-    var fileURL: URL? {
-        let documentsURL = FileManager.default.urls(
-            for: .documentDirectory,
-            in: .userDomainMask
-        ).first
-        return documentsURL?.appendingPathComponent(storedFileName)
+    private static var documentsDirectory: URL {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
     }
     
-    func rename(to newName: String) throws {
-           guard let originalURL = self.fileURL else { throw RenameError.fileNotFound }
-           guard !newName.isEmpty else { throw RenameError.invalidName }
-           guard newName != fileName else { return } // No change needed
-           
-           let fileExtension = (fileName as NSString).pathExtension
-           let newFileName = (newName as NSString).deletingPathExtension + "." + fileExtension
-           
-           let documentsURL = FileManager.default.urls(
-               for: .documentDirectory,
-               in: .userDomainMask
-           ).first!
-           
-           let newURL = documentsURL.appendingPathComponent(newFileName)
-           
-           // Check if new name already exists
-           if FileManager.default.fileExists(atPath: newURL.path) {
-               throw RenameError.nameExists
-           }
-           
-           // Perform the actual file system rename
-           try FileManager.default.moveItem(at: originalURL, to: newURL)
-           
-           // Update model properties
-           self.fileName = newFileName
-       }
+    var fileURL: URL {
+        Self.documentsDirectory.appendingPathComponent(storedFileName)
+    }
+    
+    var fileExtension: String {
+        (fileName as NSString).pathExtension
+    }
+    
+    var displayName: String {
+        (fileName as NSString).deletingPathExtension
+    }
+    
+    func rename(to newName: String, keepExtension: Bool = true) throws {
+        guard fileExists else { throw RenameError.fileNotFound }
+        guard !newName.isEmpty else { throw RenameError.invalidName }
+        
+        let finalName: String
+        if keepExtension && !fileExtension.isEmpty {
+            finalName = newName + "." + fileExtension
+        } else {
+            finalName = newName
+        }
+        
+        guard finalName != fileName else { return }
+        
+        let newURL = Self.documentsDirectory.appendingPathComponent(finalName)
+        
+        if FileManager.default.fileExists(atPath: newURL.path) {
+            throw RenameError.nameExists
+        }
+        
+        try FileManager.default.moveItem(at: fileURL, to: newURL)
+        fileName = finalName
+        storedFileName = finalName
+    }
+    
+    var fileExists: Bool {
+        FileManager.default.fileExists(atPath: fileURL.path)
+    }
+    
+    func incrementPlayCount() {
+        playCount += 1
+        lastPlayed = Date()
+    }
     
     enum RenameError: Error, LocalizedError {
         case fileNotFound

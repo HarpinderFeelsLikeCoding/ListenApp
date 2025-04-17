@@ -25,7 +25,9 @@ struct ContentView: View {
     @State private var showErrorAlert = false
     @State private var errorMessage = ""
     @State private var cancellables = Set<AnyCancellable>()
-    
+    @State private var showRenameSheet = false
+    @State private var fileToRename: AudioFile?
+
     var body: some View {
         NavigationView {
             VStack {
@@ -60,6 +62,11 @@ struct ContentView: View {
             } message: {
                 Text(errorMessage)
             }
+            .sheet(isPresented: $showRenameSheet) {
+                if let file = fileToRename {
+                    RenameView(file: file)
+                }
+            }
             .onChange(of: scenePhase) { newPhase in
                 handleScenePhaseChange(newPhase)
             }
@@ -90,6 +97,21 @@ struct ContentView: View {
                     isPlaying: currentlyPlaying == file.id,
                     action: { handlePlayback(for: file) }
                 )
+                .swipeActions(edge: .trailing) {
+                    Button {
+                        fileToRename = file
+                        showRenameSheet = true
+                    } label: {
+                        Label("Rename", systemImage: "pencil")
+                    }
+                    .tint(.blue)
+                    
+                    Button(role: .destructive) {
+                        confirmDeleteFiles([audioFiles.firstIndex(of: file)!])
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                }
             }
             .onDelete(perform: confirmDeleteFiles)
         }
@@ -161,6 +183,7 @@ struct ContentView: View {
             .padding(.horizontal)
         }
     }
+    
     // MARK: - Playback Functions
     private func skipBackward() {
         guard let player = audioPlayer else { return }
@@ -210,6 +233,7 @@ struct ContentView: View {
             withAnimation {
                 currentlyPlaying = file.id
                 file.lastPlayed = Date()
+                file.playCount += 1
                 if !isPlaying {
                     isPlaying = true
                     audioPlayer?.play()
@@ -443,7 +467,7 @@ struct ContentView: View {
                         .foregroundColor(isPlaying ? .blue : .primary)
                     
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(file.fileName)
+                        Text(file.displayName)
                             .font(.headline)
                             .lineLimit(1)
                         
