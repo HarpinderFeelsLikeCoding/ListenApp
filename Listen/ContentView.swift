@@ -213,9 +213,7 @@ struct ContentView: View {
         do {
             audioPlayer?.stop()
             
-            guard let url = file.fileURL else {
-                throw NSError(domain: "AudioError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid file URL"])
-            }
+            let url = file.fileURL
             
             guard FileManager.default.fileExists(atPath: url.path) else {
                 throw NSError(domain: "AudioError", code: -2, userInfo: [NSLocalizedDescriptionKey: "File not found"])
@@ -345,9 +343,15 @@ struct ContentView: View {
     
     private func restorePlaybackState() {
         guard let currentId = currentlyPlaying,
-              let file = audioFiles.first(where: { $0.id == currentId }),
-              let url = file.fileURL,
-              FileManager.default.fileExists(atPath: url.path) else {
+              let file = audioFiles.first(where: { $0.id == currentId }) else {
+            currentlyPlaying = nil
+            isPlaying = false
+            return
+        }
+        
+        let url = file.fileURL  // This is NOT optional binding - just direct assignment
+        
+        guard FileManager.default.fileExists(atPath: url.path) else {
             currentlyPlaying = nil
             isPlaying = false
             return
@@ -426,9 +430,9 @@ struct ContentView: View {
         for index in indices {
             let file = audioFiles[index]
             
-            if let url = file.fileURL {
-                try? FileManager.default.removeItem(at: url)
-            }
+            let url = file.fileURL
+            try? FileManager.default.removeItem(at: url)
+            
             
             modelContext.delete(file)
             

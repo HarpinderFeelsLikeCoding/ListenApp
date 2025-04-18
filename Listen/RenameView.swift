@@ -9,7 +9,7 @@ import SwiftUI
 
 struct RenameView: View {
     @Environment(\.dismiss) var dismiss
-    @ObservedObject var file: AudioFile
+    @Bindable var file: AudioFile
     @State private var newName: String = ""
     @State private var showError = false
     @State private var errorMessage = ""
