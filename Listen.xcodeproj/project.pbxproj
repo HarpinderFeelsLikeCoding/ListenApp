@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		25E0507E2DB326E40010A84D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 25E050772DB326E40010A84D /* Assets.xcassets */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		254235912DA17B5C00CD5227 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -27,10 +31,11 @@
 		254235812DA17B5B00CD5227 /* Listen.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Listen.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		254235902DA17B5C00CD5227 /* ListenTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ListenTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		2542359A2DA17B5C00CD5227 /* ListenUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ListenUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		25E050772DB326E40010A84D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		254235CB2DA2088F00CD5227 /* Exceptions for "Listen" folder in "Listen" target */ = {
+		254235CB2DA2088F00CD5227 /* Exceptions for "App Files" folder in "Listen" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
@@ -40,12 +45,12 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		254235832DA17B5B00CD5227 /* Listen */ = {
+		254235832DA17B5B00CD5227 /* App Files */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				254235CB2DA2088F00CD5227 /* Exceptions for "Listen" folder in "Listen" target */,
+				254235CB2DA2088F00CD5227 /* Exceptions for "App Files" folder in "Listen" target */,
 			);
-			path = Listen;
+			path = "App Files";
 			sourceTree = "<group>";
 		};
 		254235932DA17B5C00CD5227 /* ListenTests */ = {
@@ -56,6 +61,21 @@
 		2542359D2DA17B5C00CD5227 /* ListenUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = ListenUITests;
+			sourceTree = "<group>";
+		};
+		25E0508E2DB32B260010A84D /* Utilities */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Utilities;
+			sourceTree = "<group>";
+		};
+		25E050952DB32BA60010A84D /* Extensions */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Extensions;
+			sourceTree = "<group>";
+		};
+		25E0509C2DB32BD00010A84D /* Products */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Products;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -88,7 +108,11 @@
 		254235782DA17B5B00CD5227 = {
 			isa = PBXGroup;
 			children = (
-				254235832DA17B5B00CD5227 /* Listen */,
+				25E0509C2DB32BD00010A84D /* Products */,
+				25E050952DB32BA60010A84D /* Extensions */,
+				25E0508E2DB32B260010A84D /* Utilities */,
+				25E050772DB326E40010A84D /* Assets.xcassets */,
+				254235832DA17B5B00CD5227 /* App Files */,
 				254235932DA17B5C00CD5227 /* ListenTests */,
 				2542359D2DA17B5C00CD5227 /* ListenUITests */,
 				254235822DA17B5B00CD5227 /* Products */,
@@ -121,7 +145,10 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				254235832DA17B5B00CD5227 /* Listen */,
+				254235832DA17B5B00CD5227 /* App Files */,
+				25E0508E2DB32B260010A84D /* Utilities */,
+				25E050952DB32BA60010A84D /* Extensions */,
+				25E0509C2DB32BD00010A84D /* Products */,
 			);
 			name = Listen;
 			packageProductDependencies = (
@@ -225,6 +252,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				25E0507E2DB326E40010A84D /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
