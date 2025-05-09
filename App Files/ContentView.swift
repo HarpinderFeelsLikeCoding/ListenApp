@@ -5,6 +5,8 @@
 //  Created by Harpinder Singh on 4/5/25.
 //
 
+//split up the files soon and implement a login
+
 import SwiftUI
 import SwiftData
 import AVFoundation
