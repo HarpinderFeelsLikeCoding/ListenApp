@@ -6,6 +6,7 @@
 //
 import Foundation
 import SwiftData
+import AVFoundation
 
 @Model
 final class AudioFile: Equatable {
@@ -17,11 +18,19 @@ final class AudioFile: Equatable {
     var playCount: Int = 0
     var lastPlaybackPosition: Double = 0.0
     
-    init(fileURL: URL) {
+    init(fileURL: URL) throws {
+        guard !fileURL.lastPathComponent.isEmpty else {
+            throw InitializationError.invalidURL
+        }
+        
         self.id = UUID()
         self.fileName = fileURL.lastPathComponent
         self.storedFileName = fileURL.lastPathComponent
         self.dateAdded = Date()
+    }
+    
+    static func == (lhs: AudioFile, rhs: AudioFile) -> Bool {
+        lhs.id == rhs.id
     }
     
     private static var documentsDirectory: URL {
@@ -33,22 +42,42 @@ final class AudioFile: Equatable {
     }
     
     var fileExtension: String {
-        (fileName as NSString).pathExtension
+        (fileName as NSString).pathExtension.lowercased()
     }
     
     var displayName: String {
         (fileName as NSString).deletingPathExtension
     }
     
-    func rename(to newName: String, keepExtension: Bool = true) throws {
-        guard fileExists else { throw RenameError.fileNotFound }
-        guard !newName.isEmpty else { throw RenameError.invalidName }
+    var fileExists: Bool {
+        FileManager.default.fileExists(atPath: fileURL.path)
+    }
+    
+    var fileSize: Int64 {
+        guard fileExists,
+              let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path) else {
+            return 0
+        }
+        return attrs[.size] as? Int64 ?? 0
+    }
+    
+    var duration: TimeInterval {
+        guard fileExists else { return 0 }
+        let asset = AVURLAsset(url: fileURL)
+        return CMTimeGetSeconds(asset.duration)
+    }
+    
+    func rename(to newName: String) throws {
+        let sanitizedName = newName.sanitizedForFilename()
+        guard !sanitizedName.isEmpty else {
+            throw RenameError.invalidName
+        }
         
         let finalName: String
-        if keepExtension && !fileExtension.isEmpty {
-            finalName = newName + "." + fileExtension
+        if !fileExtension.isEmpty {
+            finalName = "\(sanitizedName).\(fileExtension)"
         } else {
-            finalName = newName
+            finalName = sanitizedName
         }
         
         guard finalName != fileName else { return }
@@ -62,10 +91,6 @@ final class AudioFile: Equatable {
         try FileManager.default.moveItem(at: fileURL, to: newURL)
         fileName = finalName
         storedFileName = finalName
-    }
-    
-    var fileExists: Bool {
-        FileManager.default.fileExists(atPath: fileURL.path)
     }
     
     func incrementPlayCount() {
@@ -85,5 +110,22 @@ final class AudioFile: Equatable {
             case .nameExists: return "A file with this name already exists"
             }
         }
+    }
+    
+    enum InitializationError: Error {
+        case invalidURL
+    }
+}
+
+extension String {
+    func sanitizedForFilename() -> String {
+        var invalidChars = CharacterSet(charactersIn: "/\\?%*|\"<>")
+        invalidChars.formUnion(.newlines)
+        invalidChars.formUnion(.controlCharacters)
+        
+        return self
+            .components(separatedBy: invalidChars)
+            .joined(separator: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

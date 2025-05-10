@@ -63,21 +63,6 @@
 			path = ListenUITests;
 			sourceTree = "<group>";
 		};
-		25E0508E2DB32B260010A84D /* Utilities */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = Utilities;
-			sourceTree = "<group>";
-		};
-		25E050952DB32BA60010A84D /* Extensions */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = Extensions;
-			sourceTree = "<group>";
-		};
-		25E0509C2DB32BD00010A84D /* Products */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = Products;
-			sourceTree = "<group>";
-		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -108,9 +93,6 @@
 		254235782DA17B5B00CD5227 = {
 			isa = PBXGroup;
 			children = (
-				25E0509C2DB32BD00010A84D /* Products */,
-				25E050952DB32BA60010A84D /* Extensions */,
-				25E0508E2DB32B260010A84D /* Utilities */,
 				25E050772DB326E40010A84D /* Assets.xcassets */,
 				254235832DA17B5B00CD5227 /* App Files */,
 				254235932DA17B5C00CD5227 /* ListenTests */,
@@ -146,9 +128,6 @@
 			);
 			fileSystemSynchronizedGroups = (
 				254235832DA17B5B00CD5227 /* App Files */,
-				25E0508E2DB32B260010A84D /* Utilities */,
-				25E050952DB32BA60010A84D /* Extensions */,
-				25E0509C2DB32BD00010A84D /* Products */,
 			);
 			name = Listen;
 			packageProductDependencies = (

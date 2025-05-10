@@ -8,11 +8,12 @@
 import SwiftUI
 
 struct RenameView: View {
-    @Environment(\.dismiss) var dismiss
+    @Environment(\.dismiss) private var dismiss
     @Bindable var file: AudioFile
+    
     @State private var newName: String = ""
-    @State private var showError = false
-    @State private var errorMessage = ""
+    @State private var errorMessage: String?
+    @State private var isRenaming = false
     
     var body: some View {
         NavigationStack {
@@ -22,6 +23,7 @@ struct RenameView: View {
                         TextField("File name", text: $newName)
                             .autocorrectionDisabled()
                             .textInputAutocapitalization(.words)
+                            .disabled(isRenaming)
                         
                         if !file.fileExtension.isEmpty {
                             Text(".\(file.fileExtension)")
@@ -31,7 +33,7 @@ struct RenameView: View {
                 } header: {
                     Text("New Name")
                 } footer: {
-                    if !errorMessage.isEmpty {
+                    if let errorMessage {
                         Text(errorMessage)
                             .foregroundColor(.red)
                     }
@@ -41,7 +43,12 @@ struct RenameView: View {
                     Button("Rename") {
                         renameFile()
                     }
-                    .disabled(!isNameValid)
+                    .disabled(!isNameValid || isRenaming)
+                    .overlay {
+                        if isRenaming {
+                            ProgressView()
+                        }
+                    }
                 }
             }
             .navigationTitle("Rename File")
@@ -51,36 +58,60 @@ struct RenameView: View {
                     Button("Cancel") {
                         dismiss()
                     }
+                    .disabled(isRenaming)
                 }
             }
             .onAppear {
                 newName = file.displayName
             }
-            .alert("Rename Error", isPresented: $showError) {
-                Button("OK") { }
-            } message: {
-                Text(errorMessage)
+            .onTapGesture {
+                dismissKeyboard()
             }
         }
     }
     
     private var isNameValid: Bool {
         !newName.isEmpty &&
-        !newName.contains("/") &&
-        !newName.contains(":") &&
+        newName.sanitizedForFilename() == newName &&
         newName != file.displayName
     }
     
     private func renameFile() {
-        do {
-            try file.rename(to: newName)
-            dismiss()
-        } catch let error as AudioFile.RenameError {
-            errorMessage = error.localizedDescription
-            showError = true
-        } catch {
-            errorMessage = "An unexpected error occurred"
-            showError = true
+        errorMessage = nil
+        isRenaming = true
+        
+        Task {
+            do {
+                try await Task.sleep(nanoseconds: 500_000_000) // Small delay for smooth UI
+                
+                try file.rename(to: newName)
+                
+                await MainActor.run {
+                    dismiss()
+                }
+            } catch {
+                await MainActor.run {
+                    handleError(error)
+                    isRenaming = false
+                }
+            }
         }
+    }
+    
+    private func handleError(_ error: Error) {
+        if let renameError = error as? AudioFile.RenameError {
+            errorMessage = renameError.localizedDescription
+        } else {
+            errorMessage = "An unexpected error occurred"
+        }
+    }
+    
+    private func dismissKeyboard() {
+        UIApplication.shared.sendAction(
+            #selector(UIResponder.resignFirstResponder),
+            to: nil,
+            from: nil,
+            for: nil
+        )
     }
 }
